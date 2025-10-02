@@ -5,7 +5,7 @@ let rateLimit = require("express-rate-limit");
 let postgresStores = require("@acpr/rate-limit-postgresql");
 const session = require("express-session");
 const pg = require("pg");
-const bcrypt = require('bcrypt');
+const bcrypt = require("bcrypt");
 const pgSession = require("connect-pg-simple")(session);
 const KeyvPostgres = require("@keyv/postgres");
 const Keyv = require("keyv");
@@ -22,12 +22,12 @@ const stats = new Keyv(
     password: process.env.POSTGRES_PASS,
     host: process.env.POSTGRES_HOST,
     database: process.env.POSTGRES_DB,
-    port: process.env.POSTGRES_PORT || 5432, table: "stats"
+    port: process.env.POSTGRES_PORT || 5432,
+    table: "stats",
   }),
 );
 
 const app = express();
-
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -53,7 +53,7 @@ const limiter = rateLimit({
       return true;
     }
     return false;
-  }
+  },
 });
 // Apply the rate limiting middleware to all requests.
 app.use(limiter);
@@ -92,50 +92,53 @@ app.set("views", "./src/views");
  * POST /api/keys/create (returns key & hash)
  */
 async function apiKey(req, res, next) {
-  const keys = await db.query('select api_key_hash from api_keys')
-  const providedKey = req.headers.get('Authorization')
+  const keys = await db.query("select api_key_hash from api_keys");
+  const providedKey = req.headers.get("Authorization");
   if (!providedKey) {
-    return res.status(401).send('Unauthorized')
+    return res.status(401).send("Unauthorized");
   }
-  const match = await Promise.all(keys.rows.map(async (row) => {
-    return await bcrypt.compare(providedKey, row.api_key_hash)
-  }))
+  const match = await Promise.all(
+    keys.rows.map(async (row) => {
+      return await bcrypt.compare(providedKey, row.api_key_hash);
+    }),
+  );
   if (match.includes(true)) {
-    return next()
+    return next();
   } else {
-    return res.status(401).send('Unauthorized - No match')
+    return res.status(401).send("Unauthorized - No match");
   }
 }
-app.get('/', (req, res) => {
-  res.render("index")
-})
+app.get("/", (req, res) => {
+  res.render("index");
+});
 
-app.get('/healthcheck', async (req, res) => {
+app.get("/healthcheck", async (req, res) => {
+  await stats.set("healthcheck", new Date().toISOString());
+  await stats.get("healthcheck");
+  await db.query("SELECT NOW()");
+  res.status(200).send("OK");
+});
 
-  await stats.set('healthcheck', new Date().toISOString())
-  await stats.get('healthcheck')
-  await db.query('SELECT NOW()')
-  res.status(200).send('OK')
-})
+app.get("/audit-logs", apiKey, async (req, res) => {
+  res.render("audit-logs");
+});
+app.get("/api/audit-logs", apiKey, async (req, res) => {
+  const logs = await db.query(
+    "select * from audit_logs order by created_at desc limit 1000",
+  );
+  res.json(logs.rows);
+});
 
-
-app.get('/audit-logs', apiKey, async (req, res) => {
-  res.render('audit-logs')
-})
-app.get('/api/audit-logs', apiKey, async (req, res) => {
-  const logs = await db.query('select * from audit_logs order by created_at desc limit 1000')
-  res.json(logs.rows)
-})
-
-app.post('/api/create-mail', apiKey, async (req, res) => {
-  // TODO 
+app.post("/api/create-mail", apiKey, async (req, res) => {
+  // TODO
   // FIXME
-})
+});
 
-
-app.get('/api/keys', apiKey, async (req, res) => {
-  const keys = await db.query('select id, api_key_preview, created_at from api_keys order by created_at desc')
-  res.json(keys.rows)
-})
+app.get("/api/keys", apiKey, async (req, res) => {
+  const keys = await db.query(
+    "select id, api_key_preview, created_at from api_keys order by created_at desc",
+  );
+  res.json(keys.rows);
+});
 
 // TODO UPDATE SCHEMA TO HAVE name for api keys
