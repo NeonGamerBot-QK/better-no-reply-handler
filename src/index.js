@@ -90,6 +90,7 @@ app.set("views", "./src/views");
  * POST /api/create-mail (api key blocked) - create a mail entry in pg (aka sends mail wowie)
  * GET /api/keys
  * POST /api/keys/create (returns key & hash)
+ * GET /unsubscribe?email=&sentEmailId=&program= unsub thingy hehe
  */
 async function apiKey(req, res, next) {
   const keys = await db.query("select api_key_hash from api_keys");
@@ -136,9 +137,19 @@ app.post("/api/create-mail", apiKey, async (req, res) => {
 
 app.get("/api/keys", apiKey, async (req, res) => {
   const keys = await db.query(
-    "select id, api_key_preview, created_at from api_keys order by created_at desc",
+    "select id, api_key_preview, label, created_at from api_keys order by created_at desc",
   );
   res.json(keys.rows);
 });
 
-// TODO UPDATE SCHEMA TO HAVE name for api keys
+app.post("/api/keys/create", apiKey, async (req, res) => {
+  const label = req.body.label || "No Label";
+  const apiKey = require("crypto").randomBytes(32).toString("hex");
+  const apiKeyHash = await bcrypt.hash(apiKey, 10);
+  const apiKeyPreview = apiKey.slice(0, 8);
+  await db.query(
+    "insert into api_keys (api_key_hash, api_key_preview, label) values ($1, $2, $3)",
+    [apiKeyHash, apiKeyPreview, label],
+  );
+  res.json({ apiKey });
+});
