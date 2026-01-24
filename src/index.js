@@ -9,19 +9,20 @@ const bcrypt = require("bcrypt");
 const pgSession = require("connect-pg-simple")(session);
 const KeyvPostgres = require("@keyv/postgres");
 const Keyv = require("keyv");
+const mailthingy = require("./mailer");
 const db = new pg.Pool({
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASS,
   host: process.env.POSTGRES_HOST,
-  database: process.env.POSTGRES_DB,
+  database: process.env.POSTGRES_DATABASE,
   port: process.env.POSTGRES_PORT || 5432,
 });
-const stats = new Keyv(
-  new KeyvPostgres({
+const stats = new Keyv.Keyv(
+  new KeyvPostgres.KeyvPostgres({
     user: process.env.POSTGRES_USER,
     password: process.env.POSTGRES_PASS,
     host: process.env.POSTGRES_HOST,
-    database: process.env.POSTGRES_DB,
+    database: process.env.POSTGRES_DATABASE,
     port: process.env.POSTGRES_PORT || 5432,
     table: "stats",
   }),
@@ -41,13 +42,13 @@ const limiter = rateLimit({
       user: process.env.POSTGRES_USER,
       password: process.env.POSTGRES_PASS,
       host: process.env.POSTGRES_HOST,
-      database: process.env.POSTGRES_DB,
+      database: process.env.POSTGRES_DATABASE,
       port: process.env.POSTGRES_PORT || 5432,
     },
     "aggregated_store",
   ),
   skip: (req, res) => {
-    const ratelimitBypass = req.headers.get("X-RateLimit-Bypass");
+    const ratelimitBypass = req.headers["X-RateLimit-Bypass"];
     const keys = (process.env.RATELIMIT_BYPASS_KEYS || "").split(",");
     if (ratelimitBypass && keys.includes(ratelimitBypass)) {
       return true;
@@ -63,6 +64,7 @@ app.use(
       pool: db, // Connection pool
       tableName: "sessions", // Use another table-name than the default "session" one
       // Insert connect-pg-simple options here
+      createTableIfMissing: true,
     }),
     secret: process.env.SESSION_SECRET,
     resave: false,
@@ -93,13 +95,15 @@ app.set("views", "./src/views");
  * GET /unsubscribe?email=&sentEmailId=&program= unsub thingy hehe
  */
 async function apiKey(req, res, next) {
-  const keys = await db.query("select api_key_hash from api_keys");
-  const providedKey = req.headers.get("Authorization");
+  const providedKey = req.headers["authorization"];
   if (!providedKey) {
     return res.status(401).send("Unauthorized");
   }
+  const keys = await db.query("select api_key_hash from api_keys").then(d => d.rows);
+  keys.push({ api_key_hash: await bcrypt.hash(process.env.MASTER_KEY, 10) });
+
   const match = await Promise.all(
-    keys.rows.map(async (row) => {
+    keys.map(async (row) => {
       return await bcrypt.compare(providedKey, row.api_key_hash);
     }),
   );
@@ -131,8 +135,40 @@ app.get("/api/audit-logs", apiKey, async (req, res) => {
 });
 
 app.post("/api/create-mail", apiKey, async (req, res) => {
-  // TODO
+  console.log(req.body)
+  if (!req.body.program) req.body.program = "untitled"
+
   // FIXME
+  const userAgent = req.headers["user-agent"] || req.body.program || "Unknown";
+  // create audit log
+  const audit_log_creation_out = await db.query(
+    `INSERT INTO audit_logs (to_email, from_useragent, subject) VALUES ($1, $2, $3) RETURNING id`,
+    [
+      JSON.stringify(req.body.to),
+      userAgent,
+      req.body.subject || "(No Subject)",
+    ],
+  );
+  // send mail
+  const ress = await mailthingy.sendMail({
+    list: {
+      help: `neon+help@saahild.com?subject=${encodeURIComponent("Help with " + req.body.program)}`,
+      unsubscribe: {
+        url: `http://${process.env.BASE_URL || "localhost:3000"}/unsubscribe?email=${encodeURIComponent(req.body.to)}&program=${encodeURIComponent(req.body.program)}&sentEmailId=${audit_log_creation_out.rows[0].id}`,
+        comment: "Unsubscribe",
+      },
+      subscribe: {
+        url: `http://${process.env.BASE_URL || "localhost:3000"}/subscribe?email=${encodeURIComponent(req.body.to)}&program=${encodeURIComponent(req.body.program)}&sentEmailId=${audit_log_creation_out.rows[0].id}`,
+        comment: "Subscribe",
+      },
+    },
+    from: `"${req.body.fromName || "(No Name)"}" <${process.env.SMTP_USER}>`,
+    ...req.body,
+  });
+  res.status(201).json({
+    mai: ress,
+    audit_log_out: audit_log_creation_out.rows,
+  });
 });
 
 app.get("/api/keys", apiKey, async (req, res) => {
@@ -152,4 +188,8 @@ app.post("/api/keys/create", apiKey, async (req, res) => {
     [apiKeyHash, apiKeyPreview, label],
   );
   res.json({ apiKey });
+});
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server started on port ${process.env.PORT || 3000}`);
 });
