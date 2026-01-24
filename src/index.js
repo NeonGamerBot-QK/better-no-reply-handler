@@ -99,7 +99,9 @@ async function apiKey(req, res, next) {
   if (!providedKey) {
     return res.status(401).send("Unauthorized");
   }
-  const keys = await db.query("select api_key_hash from api_keys").then(d => d.rows);
+  const keys = await db
+    .query("select api_key_hash from api_keys")
+    .then((d) => d.rows);
   keys.push({ api_key_hash: await bcrypt.hash(process.env.MASTER_KEY, 10) });
 
   const match = await Promise.all(
@@ -135,8 +137,8 @@ app.get("/api/audit-logs", apiKey, async (req, res) => {
 });
 
 app.post("/api/create-mail", apiKey, async (req, res) => {
-  console.log(req.body)
-  if (!req.body.program) req.body.program = "untitled"
+  console.log(req.body);
+  if (!req.body.program) req.body.program = "untitled";
 
   // FIXME
   const userAgent = req.headers["user-agent"] || req.body.program || "Unknown";
