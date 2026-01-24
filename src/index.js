@@ -77,8 +77,9 @@ app.use(
     contentSecurityPolicy: false,
   }),
 );
-// app.use(express.json())
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({
+  limit: "512mb",
+}))
 
 app.set("view engine", "ejs");
 app.set("views", "./src/views");
@@ -138,6 +139,9 @@ app.get("/api/audit-logs", apiKey, async (req, res) => {
 
 app.post("/api/create-mail", apiKey, async (req, res) => {
   console.log(req.body);
+  if (!req.body || Object.keys(req.body).length === 0) {
+    return res.status(400).json({ error: "Empty body" });
+  }
   if (!req.body.program) req.body.program = "untitled";
 
   // FIXME

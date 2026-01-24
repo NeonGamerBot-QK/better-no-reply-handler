@@ -1,0 +1,18 @@
+# Docker Compose configuration for the Node.js mail handler application
+# Note: This requires an external PostgreSQL database and SMTP server
+
+services:
+  app:
+    build: .
+    container_name: better-no-reply-handler
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
