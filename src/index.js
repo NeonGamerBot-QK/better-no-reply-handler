@@ -77,9 +77,11 @@ app.use(
     contentSecurityPolicy: false,
   }),
 );
-app.use(express.json({
-  limit: "512mb",
-}))
+app.use(
+  express.json({
+    limit: "512mb",
+  }),
+);
 
 app.set("view engine", "ejs");
 app.set("views", "./src/views");
