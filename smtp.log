@@ -1,0 +1,23 @@
+[dotenv@17.2.3] injecting env (13) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+SMTP server listening on port 2525
+[SMTP] New connection from 127.0.0.1
+[SMTP] Auth: testuser
+[SMTP] Mail from: sender@test.com
+[SMTP] Rcpt to: recipient@test.com
+
+========== NEW EMAIL RECEIVED ==========
+From: sender@test.com
+To: recipient@test.com
+Subject: neon:my-api-key My Subject
+Message-ID: <a230a7fc-9836-492a-9247-ef0ad871b46a@test.com>
+Content-Transfer-Encoding: 7bit
+Date: Wed, 04 Mar 2026 03:20:20 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hello world!
+
+==========================================
+
+[SMTP] Creds: neon:my-api-key
+[SMTP] Email forwarded successfully
