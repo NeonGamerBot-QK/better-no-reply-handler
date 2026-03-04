@@ -13,16 +13,9 @@ const transport = nodemailer.createTransport({
   tls: { rejectUnauthorized: false },
 });
 
-function parseCredentials(emailData) {
-  const subjectMatch = emailData.match(/^Subject:\s*([a-zA-Z0-9_-]+):([^:\s]+)\s*(.*)$/m);
-  if (subjectMatch) {
-    return {
-      username: subjectMatch[1],
-      apiKey: subjectMatch[2],
-      actualSubject: subjectMatch[3] || 'No Subject'
-    };
-  }
-  return null;
+function extractSubject(emailData) {
+  const subjectMatch = emailData.match(/^Subject:\s*(.+)$/m);
+  return subjectMatch ? subjectMatch[1] : 'No Subject';
 }
 
 function extractEmailBody(emailData) {
@@ -73,21 +66,17 @@ const server = new SMTPServer({
       console.log(emailData);
       console.log('==========================================\n');
 
-      const creds = parseCredentials(emailData);
-      if (!creds) {
-        console.log('[SMTP] No credentials found in email');
-        return callback(new Error('Missing credentials in subject'));
-      }
-
-      console.log(`[SMTP] Creds: ${creds.username}:${creds.apiKey}`);
+      const username = session.user;
+      console.log(`[SMTP] Authenticated user: ${username}`);
 
       const body = extractEmailBody(emailData);
+      const subject = extractSubject(emailData);
 
       try {
         await transport.sendMail({
           from: process.env.SMTP_USER,
-          to: creds.username.includes('@') ? creds.username : `${creds.username}@saahild.com`,
-          subject: creds.actualSubject,
+          to: username.includes('@') ? username : `${username}@saahild.com`,
+          subject: subject,
           text: body,
         });
         console.log('[SMTP] Email forwarded successfully');
