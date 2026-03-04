@@ -15,8 +15,8 @@ RUN corepack enable && pnpm install --frozen-lockfile --prod
 # Copy application source
 COPY src ./src
 
-# Expose the application port
-EXPOSE 3000
+# Expose the application port and SMTP port
+EXPOSE 3000 2525
 
 # Run the application
 CMD ["node", "src/index.js"]
