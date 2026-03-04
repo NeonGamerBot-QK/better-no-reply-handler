@@ -11,6 +11,7 @@ const KeyvPostgres = require("@keyv/postgres");
 const Keyv = require("keyv");
 const nodemailer = require("nodemailer");
 const { SMTPServer } = require("smtp-server");
+const { simpleParser } = require("mailparser");
 const mailthingy = require("./mailer");
 const db = new pg.Pool({
   user: process.env.POSTGRES_USER,
@@ -48,22 +49,6 @@ function extractSubject(emailData) {
   return subjectMatch ? subjectMatch[1] : "No Subject";
 }
 
-function extractEmailBody(emailData) {
-  const lines = emailData.split("\n");
-  let inBody = false;
-  const bodyLines = [];
-
-  for (const line of lines) {
-    if (inBody) {
-      bodyLines.push(line);
-    } else if (line === "") {
-      inBody = true;
-    }
-  }
-
-  return bodyLines.join("\n").trim();
-}
-
 const smtpServer = new SMTPServer({
   secure: false,
   disabledCommands: ["STARTTLS"],
@@ -85,32 +70,44 @@ const smtpServer = new SMTPServer({
     callback();
   },
   onData(stream, session, callback) {
-    let emailData = "";
+    let emailData = Buffer.from([]);
 
     stream.on("data", (chunk) => {
-      emailData += chunk.toString();
+      emailData = Buffer.concat([emailData, chunk]);
     });
 
     stream.on("end", async () => {
       console.log("\n========== NEW EMAIL RECEIVED ==========");
-      console.log(emailData);
+      console.log(emailData.toString());
       console.log("==========================================\n");
 
       const username = session.user;
       console.log(`[SMTP] Authenticated user: ${username}`);
 
-      const body = extractEmailBody(emailData);
-      const subject = extractSubject(emailData);
-
       try {
-        await smtpTransport.sendMail({
+        const parsed = await simpleParser(emailData);
+        
+        const to = parsed.to?.text || (username.includes("@")
+          ? username
+          : `${username}@saahild.com`);
+
+        const sendOptions = {
           from: process.env.SMTP_USER,
-          to: username.includes("@")
-            ? username
-            : `${username}@saahild.com`,
-          subject: subject,
-          text: body,
-        });
+          to: to,
+          subject: parsed.subject || "No Subject",
+        };
+
+        if (parsed.text) sendOptions.text = parsed.text;
+        if (parsed.html) sendOptions.html = parsed.html;
+        if (parsed.attachments?.length > 0) {
+          sendOptions.attachments = parsed.attachments.map(att => ({
+            filename: att.filename,
+            content: att.content,
+            contentType: att.contentType,
+          }));
+        }
+
+        await smtpTransport.sendMail(sendOptions);
         console.log("[SMTP] Email forwarded successfully");
       } catch (err) {
         console.error("[SMTP] Error forwarding email:", err.message);
