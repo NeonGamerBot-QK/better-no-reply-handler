@@ -57,9 +57,35 @@ const smtpServer = new SMTPServer({
     console.log(`[SMTP] New connection from ${session.remoteAddress}`);
     callback();
   },
-  onAuth(auth, session, callback) {
-    console.log(`[SMTP] Auth: ${auth.username}`);
-    callback(null, { user: auth.username });
+  async onAuth(auth, session, callback) {
+    console.log(`[SMTP] Auth attempt: ${auth.username}`);
+    const providedKey = auth.password;
+    if (!providedKey) {
+      return callback(new Error("Authentication required"));
+    }
+
+    try {
+      // Validate against stored API keys and master key
+      const keys = await db
+        .query("select api_key_hash from api_keys")
+        .then((d) => d.rows);
+      keys.push({ api_key_hash: await bcrypt.hash(process.env.MASTER_KEY, 10) });
+
+      const matchResults = await Promise.all(
+        keys.map((row) => bcrypt.compare(providedKey, row.api_key_hash)),
+      );
+
+      if (matchResults.includes(true)) {
+        console.log(`[SMTP] Auth successful: ${auth.username}`);
+        return callback(null, { user: auth.username });
+      } else {
+        console.log(`[SMTP] Auth failed: ${auth.username}`);
+        return callback(new Error("Invalid credentials"));
+      }
+    } catch (err) {
+      console.error("[SMTP] Auth error:", err.message);
+      return callback(new Error("Authentication error"));
+    }
   },
   onMailFrom(address, session, callback) {
     console.log(`[SMTP] Mail from: ${address.address}`);
@@ -108,7 +134,18 @@ const smtpServer = new SMTPServer({
         }
 
         await smtpTransport.sendMail(sendOptions);
-        console.log("[SMTP] Email forwarded successfully");
+
+        // Audit log the forwarded email
+        await db.query(
+          `INSERT INTO audit_logs (to_email, from_useragent, subject) VALUES ($1, $2, $3)`,
+          [
+            JSON.stringify(to),
+            `SMTP:${username}@${session.remoteAddress}`,
+            sendOptions.subject,
+          ],
+        );
+
+        console.log("[SMTP] Email forwarded and audit logged successfully");
       } catch (err) {
         console.error("[SMTP] Error forwarding email:", err.message);
       }
@@ -141,7 +178,7 @@ const limiter = rateLimit({
     "aggregated_store",
   ),
   skip: (req, res) => {
-    const ratelimitBypass = req.headers["X-RateLimit-Bypass"];
+    const ratelimitBypass = req.headers["x-ratelimit-bypass"];
     const keys = (process.env.RATELIMIT_BYPASS_KEYS || "").split(",");
     if (ratelimitBypass && keys.includes(ratelimitBypass)) {
       return true;
@@ -250,7 +287,8 @@ app.post("/api/create-mail", apiKey, async (req, res) => {
       req.body.subject || "(No Subject)",
     ],
   );
-  // send mail
+  // send mail — explicitly pick allowed fields to prevent request body from overriding
+  // security-sensitive options like `from`, `list`, or transport settings
   const ress = await mailthingy.sendMail({
     list: {
       help: `neon+help@saahild.com?subject=${encodeURIComponent("Help with " + req.body.program)}`,
@@ -264,7 +302,11 @@ app.post("/api/create-mail", apiKey, async (req, res) => {
       },
     },
     from: `"${req.body.fromName || "(No Name)"}" <${process.env.SMTP_USER}>`,
-    ...req.body,
+    to: req.body.to,
+    subject: req.body.subject,
+    text: req.body.text,
+    html: req.body.html,
+    attachments: req.body.attachments,
   });
   res.status(201).json({
     mai: ress,
