@@ -28,6 +28,7 @@
     "zod": "^4.1.11"
   },
   "pnpm": {
+    "dangerouslyAllowAllBuilds": true,
     "onlyBuiltDependencies": [
       "bcrypt",
       "keyv"
