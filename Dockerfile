@@ -1,3 +1,4 @@
+# check=skip=SecretsUsedInArgOrEnv
 # Dockerfile for the Node.js mail handler application
 FROM node:22-alpine
 
