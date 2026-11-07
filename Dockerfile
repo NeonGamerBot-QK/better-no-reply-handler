@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 
 # Install pnpm and dependencies
-RUN corepack enable && pnpm install --frozen-lockfile --prod
+RUN corepack enable && pnpm config set dangerouslyAllowAllBuilds true  && pnpm install --frozen-lockfile --prod
 
 # Copy application source
 COPY src ./src
